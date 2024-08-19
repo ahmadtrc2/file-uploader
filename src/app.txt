@@ -1,0 +1,111 @@
+import React, { useState, useRef } from 'react';
+import './App.css'
+
+function FileUploader() {
+  const [selectedFiles, setSelectedFiles] = useState([]);
+  const [intervalTime, setIntervalTime] = useState(0.1); 
+  const [addressDirection, setAddressDirection] = useState('http://localhost:5000/reciver');
+  
+  // استفاده از useRef برای نگهداری شمارنده ارسال‌ها
+  const flagCounter = useRef(new Map());
+
+  const handleFileChange = (event) => {
+    setSelectedFiles(Array.from(event.target.files));
+    console.log("Selected files:", event.target.files);
+  };
+
+  const handleIntervalChange = (event) => {
+    setIntervalTime(event.target.value);
+    console.log("New interval time:", event.target.value);
+  };
+
+  const handleAddressDirection = (event) =>{
+    setAddressDirection(event.target.value);
+    console.log('New Address Location:', event.target.value);
+  }
+
+  const startUploading = () => {
+    console.log("Starting the upload process...");
+    setInterval(() => {
+      checkAndUploadNewFiles();
+    }, intervalTime * 60000); 
+  };
+
+  const checkAndUploadNewFiles = () => {
+    console.log('Checking for new files to upload...');
+    
+    let newFiles = selectedFiles.filter(file => {
+      console.log('File:', file.name, 'Last modified:', new Date(file.lastModified).toLocaleString());
+      const lastModified = new Date(file.lastModified);
+      return !flagCounter.current.get(file.name) || lastModified > flagCounter.current.get(file.name).lastUploadTime;
+    });
+
+    newFiles = newFiles.filter(file => {
+      const count = flagCounter.current.get(file.name)?.count || 0;
+      return count < 2;
+    });
+
+    if (newFiles.length > 0) {
+      console.log("New files found for upload:", newFiles);
+      uploadFiles(newFiles);
+    } else {
+      console.log("No new files to upload");
+      fetch(addressDirection, {
+        method: 'POST',
+        body: JSON.stringify({ message: "No new files to upload" }),
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+  };
+
+  const uploadFiles = (files) => {
+    console.log("Uploading files:", files);
+
+    files.forEach((file) => {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      fetch(addressDirection, {
+        method: 'POST',
+        body: formData,
+      })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error('Network response was not ok');
+        }
+        return response.json();
+      })
+      .then((data) => {
+        console.log(`File uploaded successfully: ${data}`);
+        const lastUploadTime = new Date();
+        flagCounter.current.set(file.name, {
+          lastUploadTime: lastUploadTime,
+          count: (flagCounter.current.get(file.name)?.count || 0) + 1,
+        });
+      })
+      .catch((error) => console.error('Error:', error));
+    });
+  };
+
+  return (
+    <div>
+      <h2>File Uploader</h2>
+      <input type="file" multiple onChange={handleFileChange} webkitdirectory="true" />
+      <div>
+        <label>
+          Address: 
+          <input name='addressInput' value={addressDirection} onChange={handleAddressDirection} />
+        </label>
+      </div>
+      <div>
+        <label>
+          Check every (minutes):
+          <input type="number" value={intervalTime} onChange={handleIntervalChange} />
+        </label>
+      </div>
+      <button onClick={startUploading}>Start Uploading</button>
+    </div>
+  );
+}
+
+export default FileUploader;
